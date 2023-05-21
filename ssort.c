@@ -93,28 +93,10 @@ int main(int argc, char **argv) {
 	int len = num_elems_recv;   // Should be n (where N = n*n)
     int phase = 0;
 
-	sort(sort_tmp, &len, phase, MPI_COMM_WORLD);
-
-	// Prepare Buffers to Gather
-	int *finLens = malloc(sizeof(int)*num_processors);
-	int outlen = len;
 	output = malloc(sizeof(double)*N);
-	MPI_Gather(&outlen, 1, MPI_INT,
-               finLens, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
-	// Settle Displs and counts
-	if (rank==MASTER){
-		for (int i = 0; i<num_processors;i++){
-			if(i>0){
-				displs[i] = displs[i-1] + finLens[i-1];
-			} else {
-				displs[i] = 0;
-			}
-		}
-	}
-
-	MPI_Gatherv(sort_tmp, outlen, MPI_DOUBLE,
-					output, finLens, displs,
-					MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+	sort(sort_tmp, &len, phase, output, MPI_COMM_WORLD);
+	// db_arr(sort_tmp, len, "afterSort", rank, phase);
+	
 
 	// // Calculate longest execution time
 	double my_execution_time = MPI_Wtime() - start;
@@ -152,7 +134,7 @@ int compareOpp(const void* num1, const void* num2)
 				: 1;
 }  
 
-void sort(double *arr, int *len, int phase, MPI_Comm communicator) {
+void sort(double *arr, int *len, int phase, double *output, MPI_Comm communicator) {
 	int rank, num_processors;
 
 	// Narr = New array
@@ -183,15 +165,17 @@ void sort(double *arr, int *len, int phase, MPI_Comm communicator) {
         } 
         qsort(arr, *len, sizeof(double), compare);
         // db_arr(arr, *len, "PreFinal", rank, phase);
+		gather_Numbers(arr, *len, output, MPI_COMM_WORLD);
+
 		// printf("\n");
         return;
     }
     // MAIN DEBUGGER
     phase += 1;
-    db_arr(arr, *len, "Post Phase", rank, phase);
+    // db_arr(arr, *len, "Post Phase", rank, phase);
 
     // Call recursively
-    sort(arr, len, phase, communicator);
+    sort(arr, len, phase, output, communicator);
     return;
 }
 
@@ -212,6 +196,37 @@ void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr){
 	// db_arr(arr, *len, "After Exchange", rank, phase);
 	return;
 };
+
+void gather_Numbers(double *arr_in, int len, double *output, MPI_Comm communicator){
+	int rank, num_processors;
+	
+	MPI_Comm_size(communicator, &num_processors); 
+	MPI_Comm_rank(communicator, &rank);
+
+	// Prepare Buffers to Gather
+	int *finLens = malloc(sizeof(int)*num_processors);
+	int outlen = len;
+	int *displs = malloc(sizeof(int) * num_processors);
+	MPI_Gather(&outlen, 1, MPI_INT,
+               finLens, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+	// Settle Displs and counts
+	if (rank==MASTER){
+		for (int i = 0; i<num_processors;i++){
+			if(i>0){
+				displs[i] = displs[i-1] + finLens[i-1];
+			} else {
+				displs[i] = 0;
+			}
+		}
+	}
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	MPI_Gatherv(arr_in, outlen, MPI_DOUBLE,
+					output, finLens, displs,
+					MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+	
+	return;
+}
 
 double median(double *arr, int len){
 	if (len % 2 == 0) {
