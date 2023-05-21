@@ -10,7 +10,7 @@
 #define LEFT_NEIGHBOR(rank, size) ((rank) > 0 ? (rank) - 1 : (size) - 1)
 #define RIGHT_NEIGHBOR(rank, size) ((rank) < (size) - 1 ? (rank) + 1 : 0)
 #define FILENAME "output.txt"
-// # mpirun -n 4 ./quicksort /proj/uppmax2023-2-13/nobackup/qsort_indata/input125000000.txt /home/anle5400/pdp/ass/pdp_A3/trueSlurm_0.txt 2
+// # mpirun -n 15 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input15.txt /home/anle5400/ass/pds_indiv/trueSlurm_0.txt
 
 int main(int argc, char **argv) {
 	int rank, num_processors, N;
@@ -19,14 +19,13 @@ int main(int argc, char **argv) {
 
 	char *input_name = argv[1];
 	char *output_name = argv[2];
-	int strat = atoi(argv[3]);
 	/***
 	*******************************************************************************************************
 	***/
 	double *input, *output;
 
-	if (4 != argc) {
-		printf("Usage: qsort input_file output_file pivot_strat\n");
+	if (3 != argc) {
+		printf("Usage: shearsort input_file output_file\n");
 		return 1;
 	}
 
@@ -42,7 +41,7 @@ int main(int argc, char **argv) {
 		if (0 > (num_values = read_input(input_name, &input))) {
 			return 2;
 		}
-		N = num_values;
+		N = num_values * num_values;
 		int remainder = N % num_processors;
 		num_elems_per_processor = N / num_processors;
 		for (int i=0; i<num_processors; i++){
@@ -92,8 +91,9 @@ int main(int argc, char **argv) {
 	double start = MPI_Wtime();
 	// Create pointer and run sort algorithm, returns pointer to final array of sorted to check
 	int len = num_elems_recv;   // Should be n (where N = n*n)
-    int phase = num_processors + 1;
-	double * finalout = sort(sort_tmp, &len, phase, MPI_COMM_WORLD);
+    int phase = 0;
+
+	sort(sort_tmp, &len, phase, MPI_COMM_WORLD);
 
 	// Prepare Buffers to Gather
 	int *finLens = malloc(sizeof(int)*num_processors);
@@ -112,23 +112,25 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	MPI_Gatherv(finalout, outlen, MPI_DOUBLE,
+	MPI_Gatherv(sort_tmp, outlen, MPI_DOUBLE,
 					output, finLens, displs,
 					MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+
 	// // Calculate longest execution time
 	double my_execution_time = MPI_Wtime() - start;
 	MPI_Reduce(&my_execution_time, &longest_exec_time, 1, MPI_DOUBLE, MPI_MAX, MASTER, MPI_COMM_WORLD);
 	
 	// if (rank==MASTER){
-	// 	// db_arr(output, N, "Final", rank, num_processors); /* Debugger */
-	// 	write_output(output_name, output, N);
+	// 	// write_output(output_name, output, N);
 	// }
 	MPI_Finalize(); 
 
 	// // Announce timing
 	if (rank == MASTER) {
-		printf("FileName: %s\n\tProcessors: %i\n\tStrat: %i\n\tTime: %f\n\n", input_name, num_processors, strat, longest_exec_time);
+		printf("FileName: %s\n\tProcessors: %i\n\tTime: %f\n\n", input_name, num_processors, longest_exec_time);
 		// printf("%f", longest_exec_time);
+        db_arr(output, len*len, "OUT", rank, phase);
+
 	}
 
 	return 0;
@@ -150,154 +152,65 @@ int compareOpp(const void* num1, const void* num2)
 				: 1;
 }  
 
-double * sort(double *arr, int *len, int phase, MPI_Comm communicator) {
+void sort(double *arr, int *len, int phase, MPI_Comm communicator) {
 	int rank, num_processors;
 
 	// Narr = New array
 	// Buffers
-	double *output, *Narr;
+	double *Narr;
+    Narr = prep_buffs(*len);
 
 	MPI_Comm_size(communicator, &num_processors); 
 	MPI_Comm_rank(communicator, &rank);
 
+    // db_arr(arr, *len, "Pre Phase", rank, phase);
+
 	// Only sort when there's existing doubles in the array
-	if (*len > 0) {
+	if (phase < num_processors && phase % 2 == 0) {
         if (rank%2==0){
     		qsort(arr, *len, sizeof(double), compare);
         } else {
     		qsort(arr, *len, sizeof(double), compareOpp);
         }
-		// MAIN DEBUGGER
-		// db_arr(arr, *len, "Rank", rank, num_processors);
-	}
+        exchange_Numbers(arr, len, rank, phase, Narr);
+        arr = Narr;
+	} else if (phase < num_processors && phase % 2 == 1) {
+        qsort(arr, *len, sizeof(double), compare);
+        exchange_Numbers(arr, len, rank, phase, Narr);
+        arr = Narr;
+    } else if (phase == num_processors) {
+        if (phase%2==1){
+            exchange_Numbers(arr, len, rank, phase, Narr);
+            arr = Narr;
+        } 
+        qsort(arr, *len, sizeof(double), compare);
+        db_arr(arr, *len, "PreFinal", rank, phase);
+        return;
+    }
+    // MAIN DEBUGGER
+    // db_arr(arr, *len, "Rank", rank, num_processors);
+    phase += 1;
+    // db_arr(arr, *len, "Post Phase", rank, phase);
 
-	if (num_processors == 1) {
-		return arr; // Finished! Time to Stitch
-	} else {
-		// Split communicator
-		MPI_Comm halved_communicator;
-		int npPerGroup = num_processors/2; 	// Number of proc per Grp of Communicators
-		int color = (rank >= npPerGroup);		// Determines get big or small (1 = big, 0 = small)
-		Narr = exchange_Numbers(arr, len, rank, color, npPerGroup, strat, communicator);
-
-		MPI_Comm_split(communicator, color, rank, &halved_communicator);
-		// Call recursively
-		Narr = sort(Narr, len, halved_communicator);
-		MPI_Comm_free(&halved_communicator);
-
-		return Narr;
-	}
+    // Call recursively
+    sort(arr, len, phase, communicator);
+    return;
 }
 
-double * exchange_Numbers(double *arr, int *len, int rank, int color, int npPerGroup, int strat, MPI_Comm communicator){
-	double pivot, ave_med;
-	double *sender, *recver, *kept_arr, *tmp_arr;
-	double *medians;
-	int sendNum, recvNum;
-	int dest, tag;
-
-	if (color){
-		dest = rank - npPerGroup;
-	} else {
-		dest = rank + npPerGroup;
-	}
-	tag = rank % npPerGroup;
-
-	double loc_med = 0;
-	if (*len>0){
-		loc_med = median(arr, *len);
-	}
-	switch (strat){
-	case 1:	// Pick 1
-		if (rank == MASTER) {
-			pivot = median(arr, *len);
-		}
-		MPI_Bcast(&pivot, 1, MPI_DOUBLE, MASTER, communicator);
-		break;
-
-	case 2:	// Med of Med
-		if (rank == MASTER) {
-			medians = (double*)malloc(2 * npPerGroup * sizeof(double));
-		}
-		MPI_Gather(&loc_med, 1, MPI_DOUBLE, medians, 1, MPI_DOUBLE, 0, communicator);
-
-		if (rank == MASTER) {
-			pivot = median(medians, 2 * npPerGroup);
-		}
-		MPI_Bcast(&pivot, 1, MPI_DOUBLE, 0, communicator);
-		break;
-
-	case 3:	// Average
-	    MPI_Reduce(&loc_med, &ave_med, 1, MPI_DOUBLE, MPI_SUM, 0, communicator);
-		if (rank == MASTER) {
-			pivot = ave_med / (2 * npPerGroup);
-		}
-		MPI_Bcast(&pivot, 1, MPI_DOUBLE, 0, communicator);			
-		break;
-	default:
-		break;
-	}
-
-	int splitIdx=0;
-	int startSendIdx = 0;
-	int startRecvIdx = 0;
-	for (int i=0; i<= *len;i++){
-		splitIdx = i;		// Size of smaller than Median is i, bigger than Median is (len - i)
-		
-		if (i == *len){
-			splitIdx=i;
-			break;
-		} else if (arr[i] >= pivot){
-			break;
-		}
-	}
-
-	if (color){		// Send Smaller Chunk (rank Bigger than Partner)
-		sendNum = splitIdx;
-		startSendIdx = 0;
-		startRecvIdx = 0;
-	} else {		// Send Bigger Chunk (rank Smaller than Partner)
-		sendNum = *len - splitIdx;
-		startSendIdx = splitIdx;
-		startRecvIdx = sendNum;
-	}
-	MPI_Sendrecv(&sendNum, 1, MPI_INT, 
-				dest, rank, &recvNum, 1, MPI_INT, 
-				dest, dest, communicator, MPI_STATUS_IGNORE);	// DEST = partner Rank
-
-	// Prepare New Buffers
-	int keptLen = *len - sendNum;		// How long is array after sending?
+void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr){
 	// Buffers
-	recver = prep_buffs(recvNum);
-	sender = prep_buffs(sendNum);
-	kept_arr = prep_buffs(keptLen);
-
-	// copy to send
-	memcpy(sender, arr + startSendIdx, sizeof(double)*sendNum);
-	// Copy whatever is not to be sent to other node
-	if (startSendIdx > 0){
-		memcpy(kept_arr, arr, sizeof(double)*keptLen);
-	} else if (sendNum < *len) {
-		memcpy(kept_arr, arr + sendNum, sizeof(double)*keptLen);
-	}
-
-	// Array length after Recving and sending
-	int newSIze = keptLen + recvNum;
-	if (newSIze > *len){
-		arr = (double *)realloc(arr, newSIze * sizeof(double));
-	}
-	*len = newSIze;
-
-	MPI_Sendrecv(sender, sendNum, MPI_DOUBLE, 
-				dest, rank, recver, recvNum, MPI_DOUBLE, 
-				dest, dest, communicator, MPI_STATUS_IGNORE);	// DEST = partner Rank
-	
-	memcpy(arr, kept_arr, sizeof(double)*keptLen);
-	memcpy(arr + keptLen, recver, sizeof(double)*recvNum);
-
+    double *swapTmp;
+	swapTmp = prep_buffs(*len);
+    MPI_Alltoall(arr, 1, MPI_DOUBLE,
+                 Narr, 1, MPI_DOUBLE,
+                 MPI_COMM_WORLD);
+    swapTmp = arr;
+    arr = Narr;
+    Narr = swapTmp;
+    free(Narr);
 	//DEBUG
-	// db_arr(arr, *len, "After SendRecv", rank, npPerGroup);
-	return arr;
+	db_arr(arr, *len, "After Exchange", rank, phase);
+	return;
 };
 
 double median(double *arr, int len){
@@ -338,11 +251,11 @@ int read_input(const char *file_name, double **values) {
 		printf("AT: %i", num_values);
 		return -1;
 	}
-	if (NULL == (*values = malloc(num_values * sizeof(double)))) {
+	if (NULL == (*values = malloc(num_values * num_values * sizeof(double)))) {
 		perror("Couldn't allocate memory for input");
 		return -1;
 	}
-	for (int i=0; i< num_values; i++) {
+	for (int i=0; i< num_values * num_values; i++) {
 		if (EOF == fscanf(file, "%lf", &((*values)[i]))) {
 			perror("Couldn't read elements from input file");
 			return -1;

@@ -10,12 +10,12 @@ DEBUGFLAGS:=-g
 
 all: code
 
-code: qsort.c
+code: ssort.c
 	$(CC) $(CFLAGS) $(RELEASEFLAGS) -o shearsort ssort.c $(LIBS)
 
 # debug: qsort.c
 # 	$(CC) $(CFLAGS) $(DEBUGFLAGS) -D DEBUG -o quicksortD qsort.c $(LIBS)
 
 clean:
-	$(RM) quicksort quicksortD
+	$(RM) shearsort
 
