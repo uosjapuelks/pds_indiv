@@ -10,7 +10,7 @@
 #define LEFT_NEIGHBOR(rank, size) ((rank) > 0 ? (rank) - 1 : (size) - 1)
 #define RIGHT_NEIGHBOR(rank, size) ((rank) < (size) - 1 ? (rank) + 1 : 0)
 #define FILENAME "output.txt"
-// # mpirun -n 15 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input15.txt /home/anle5400/ass/pds_indiv/trueSlurm_0.txt
+// # mpirun -n 15 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input15.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt
 
 int main(int argc, char **argv) {
 	int rank, num_processors, N;
@@ -120,9 +120,9 @@ int main(int argc, char **argv) {
 	double my_execution_time = MPI_Wtime() - start;
 	MPI_Reduce(&my_execution_time, &longest_exec_time, 1, MPI_DOUBLE, MPI_MAX, MASTER, MPI_COMM_WORLD);
 	
-	// if (rank==MASTER){
-	// 	// write_output(output_name, output, N);
-	// }
+	if (rank==MASTER){
+		write_output(output_name, output, N);
+	}
 	MPI_Finalize(); 
 
 	// // Announce timing
@@ -163,8 +163,6 @@ void sort(double *arr, int *len, int phase, MPI_Comm communicator) {
 	MPI_Comm_size(communicator, &num_processors); 
 	MPI_Comm_rank(communicator, &rank);
 
-    // db_arr(arr, *len, "Pre Phase", rank, phase);
-
 	// Only sort when there's existing doubles in the array
 	if (phase < num_processors && phase % 2 == 0) {
         if (rank%2==0){
@@ -184,13 +182,13 @@ void sort(double *arr, int *len, int phase, MPI_Comm communicator) {
             arr = Narr;
         } 
         qsort(arr, *len, sizeof(double), compare);
-        db_arr(arr, *len, "PreFinal", rank, phase);
+        // db_arr(arr, *len, "PreFinal", rank, phase);
+		// printf("\n");
         return;
     }
     // MAIN DEBUGGER
-    // db_arr(arr, *len, "Rank", rank, num_processors);
     phase += 1;
-    // db_arr(arr, *len, "Post Phase", rank, phase);
+    db_arr(arr, *len, "Post Phase", rank, phase);
 
     // Call recursively
     sort(arr, len, phase, communicator);
@@ -201,6 +199,8 @@ void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr){
 	// Buffers
     double *swapTmp;
 	swapTmp = prep_buffs(*len);
+	MPI_Barrier( MPI_COMM_WORLD );
+
     MPI_Alltoall(arr, 1, MPI_DOUBLE,
                  Narr, 1, MPI_DOUBLE,
                  MPI_COMM_WORLD);
@@ -209,7 +209,7 @@ void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr){
     Narr = swapTmp;
     free(Narr);
 	//DEBUG
-	db_arr(arr, *len, "After Exchange", rank, phase);
+	// db_arr(arr, *len, "After Exchange", rank, phase);
 	return;
 };
 
