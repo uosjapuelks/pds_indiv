@@ -8,9 +8,8 @@
 # input1500.txt  input2000.txt  input3.txt     input500.txt  input_gen.py    output15.txt    output3.txt     output5.txt
 # input15.txt    input3000.txt  input400.txt   input5.txt    output1000.txt  output2000.txt  output4.txt
 
-# mpirun -n 16 ./shearsort /proj/uppmax2023-2-13/nobackup/qsort_indata/input125000000.txt /home/anle5400/ass/pdp_A3/trueSlurm_0.txt 2
-# mpirun -n 2 ./shearsort /proj/uppmax2023-2-13/nobackup/qsort_indata/input4.txt /home/anle5400/ass/pds_indiv/trueSlurm_0.txt
-
+# mpirun -n 2 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input4.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
+# mpirun -n 5 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input15.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
 fileidx=$1
 
 if [[ $fileidx == 0 ]]
