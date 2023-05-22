@@ -2,6 +2,7 @@
 #define MASTER 0
 
 #include <mpi.h>
+#include <math.h>
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -147,6 +148,8 @@ int main(int argc, char **argv) {
     Narr = prep_buffs(len);
 	double start = MPI_Wtime();
 
+	stepsNeeded = ceil(log2(num_values))*2;
+	printf("steps needed: %i", stepsNeeded);
 	for (;phase<= num_values; phase++){
 		sort(sort_tmp, &len, phase, output, Narr);
 	}
@@ -186,17 +189,17 @@ int compareOpp(const void* num1, const void* num2)
 }  
 
 void sort(double *arr, int *len, int phase, double *output, double *Narr) {
-	if (phase != num_values) {
+	if (phase != stepsNeeded) {
 		int beginwithOdd = startIndicator;
 		for (int i=0; i<num_rows_recv; i++){
-			if (phase < num_values && phase % 2 == 0){
+			if (phase < stepsNeeded && phase % 2 == 0){
 				if (beginwithOdd == 0) {
 					qsort(&arr[i*num_values], num_values, sizeof(double), compare);
 				} else {
 					qsort(&arr[i*num_values], num_values, sizeof(double), compareOpp);
 				}
 				beginwithOdd = beginwithOdd ? 0 : 1;
-			} else if (phase < num_values && phase % 2 == 1) {
+			} else if (phase < stepsNeeded && phase % 2 == 1) {
 				qsort(&arr[i*num_values], num_values, sizeof(double), compare);
 			}
 		}
@@ -205,7 +208,7 @@ void sort(double *arr, int *len, int phase, double *output, double *Narr) {
 		// arr = Narr;
 		// memcpy(Narr, arr, sizeof(double)**len);
 		memcpy(arr, Narr, sizeof(double)**len);
-	} else if (phase == num_values) {
+	} else if (phase == stepsNeeded) {
         if (phase%2==1){
             exchange_Numbers(arr, len, rank, phase, Narr);
             // arr = Narr;
@@ -230,14 +233,14 @@ void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr){
 	gather_Numbers(arr, *len, tmp, MPI_COMM_WORLD);
 	// Gather
 
-	MPI_Scatter(tmp, num_rows_per_processor, column_resized, 
-			Narr, num_elems_recv, MPI_DOUBLE,
-			MASTER, MPI_COMM_WORLD);
+	// MPI_Scatter(tmp, num_rows_per_processor, column_resized, 
+	// 		Narr, num_elems_recv, MPI_DOUBLE,
+	// 		MASTER, MPI_COMM_WORLD);
 
 	// Scatter new row to be sorted
-	// MPI_Scatterv(tmp, atav_scount, atav_sdispls, column_resized, 
-	// 			Narr, num_elems_recv, MPI_DOUBLE,
-	// 			MASTER, MPI_COMM_WORLD);
+	MPI_Scatterv(tmp, atav_scount, atav_sdispls, column_resized, 
+				Narr, num_elems_recv, MPI_DOUBLE,
+				MASTER, MPI_COMM_WORLD);
 	return;
 };
 
@@ -248,12 +251,12 @@ void flip_isOdd(){
 void gather_Numbers(double *arr_in, int len, double *output, MPI_Comm communicator){
 
 	// Prepare Buffers to Gather
-	MPI_Gather(arr_in, len, MPI_DOUBLE,
-               output, len, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+	// MPI_Gather(arr_in, len, MPI_DOUBLE,
+    //            output, len, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 
-	// MPI_Gatherv(arr_in, len, MPI_DOUBLE,
-	// 				output, gfinLens, gdispls,
-	// 				MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+	MPI_Gatherv(arr_in, len, MPI_DOUBLE,
+					output, gfinLens, gdispls,
+					MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 	
 	return;
 }

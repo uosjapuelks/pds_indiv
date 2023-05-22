@@ -27,5 +27,6 @@ double *tmp;
 double *Narr;
 double *sort_tmp;
 int rank, num_processors, N;
+int stepsNeeded;
 
 #endif // QSORTHELP
