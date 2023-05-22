@@ -13,6 +13,11 @@ double * prep_buffs(int newSize);
 void db_arr(double *ptr, int len, char *msg, int rank, int npPerGroup);
 double median(double *arr, int len);
 
-int num_elems_per_processor = 0;
+int num_rows_per_processor = 0;
+int num_elems_recv = 0;
+int *atav_scount, *atav_sdispls, *atav_rcount, *atav_rdispls;
+MPI_Datatype column_type;
+MPI_Datatype column_resized;
+int num_values;
 
 #endif // QSORTHELP
