@@ -2,7 +2,7 @@
 
 #SBATCH -M snowy
 #SBATCH -A uppmax2023-2-13
-#SBATCH -t 40:00
+#SBATCH -t 5:00
 
 # input1000.txt  input1600.txt  input3200.txt  input4.txt    input800.txt    output1500.txt  output3000.txt  output500.txt
 # input1500.txt  input2000.txt  input3.txt     input500.txt  input_gen.py    output15.txt    output3.txt     output5.txt
@@ -10,7 +10,7 @@
 
 # mpirun -n 2 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input4.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
 # mpirun -n 3 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input4.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
-# mpirun -n 4 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input15.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
+# mpirun -n 1 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input3000.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
 # Check Correctness
 # /proj/uppmax2023-2-13/nobackup/shear_indata/output15.txt
 
@@ -43,4 +43,7 @@ then
 elif [[ $fileidx == 8 ]]
 then
     mpirun ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input3200.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm.txt
+elif [[ $fileidx == 9 ]]
+then
+    mpirun ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input15.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm.txt
 fi

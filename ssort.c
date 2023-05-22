@@ -149,8 +149,7 @@ int main(int argc, char **argv) {
 	double start = MPI_Wtime();
 
 	stepsNeeded = ceil(log2(num_values))*2;
-	printf("steps needed: %i", stepsNeeded);
-	for (;phase<= num_values; phase++){
+	for (;phase<= stepsNeeded; phase++){
 		sort(sort_tmp, &len, phase, output, Narr);
 	}
 	

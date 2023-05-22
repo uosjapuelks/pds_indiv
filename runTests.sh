@@ -47,4 +47,5 @@
 # sbatch -p node -n 32 a3.sh 5 2
 
 # Check A3
-sbatch -p node -n 32 a4.sh 3
+sbatch -p node -n 10 a4.sh 7
+sbatch -p node -n 1 a4.sh 7
