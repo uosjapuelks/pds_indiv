@@ -11,13 +11,17 @@ void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr);
 void gather_Numbers(double *arr_in, int len, double *output, MPI_Comm communicator);
 double * prep_buffs(int newSize);
 void db_arr(double *ptr, int len, char *msg, int rank, int npPerGroup);
-double median(double *arr, int len);
-
+void flip_isOdd();
 int num_rows_per_processor = 0;
 int num_elems_recv = 0;
 int *atav_scount, *atav_sdispls, *atav_rcount, *atav_rdispls;
 MPI_Datatype column_type;
 MPI_Datatype column_resized;
+int *gfinLens;
+int *gdispls;
 int num_values;
+int isOdd;
+int startIndicator; // Starting row is odd or even (0 is even, 1 is odd)
+int num_rows_recv;
 
 #endif // QSORTHELP

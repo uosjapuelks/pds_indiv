@@ -33,6 +33,11 @@ int main(int argc, char **argv) {
 	MPI_Comm_size(MPI_COMM_WORLD, &num_processors); 
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+	// Buffers for gather
+	gfinLens = malloc(sizeof(int)*num_processors);
+	gdispls = malloc(sizeof(int) * num_processors);
+
+
 	// Read Inputs from file and calculate num per processor and Bcast num per process
 	int *num_elems_send = malloc(sizeof(int) * num_processors);
 	int *displs = malloc(sizeof(int) * num_processors);
@@ -68,7 +73,6 @@ int main(int argc, char **argv) {
 		// db_arr(input, N, "FILE IN", rank, num_processors);
 	}
 
-	int num_rows_recv;
 	MPI_Bcast(&num_values, 1, MPI_INT, 0, MPI_COMM_WORLD);			
 
 	/***
@@ -95,7 +99,7 @@ int main(int argc, char **argv) {
     int phase = 0;
 
 	// Create the datatype and Prepare buffers for alltoallV for later use
-	MPI_Type_vector(num_rows_recv, 1, num_values, MPI_DOUBLE, &column_type);
+	MPI_Type_vector(num_values, 1, num_values, MPI_DOUBLE, &column_type);
 	MPI_Type_commit(&column_type);
     MPI_Type_create_resized(column_type, 0, sizeof(double), &column_resized);
     MPI_Type_commit(&column_resized);
@@ -107,6 +111,9 @@ int main(int argc, char **argv) {
 
 	remainder = num_values % num_processors;
 	num_rows_per_processor = num_values / num_processors;
+
+	isOdd = 0;
+
 	for (int i=0; i<num_processors; i++){
 		if (remainder){
 			atav_scount[i] = (num_rows_per_processor + 1);
@@ -125,9 +132,17 @@ int main(int argc, char **argv) {
 			atav_sdispls[i] = 0;
 			atav_rdispls[i] = 0;
 		}
+		if (rank == i){
+			startIndicator = isOdd;
+		}
+		if (atav_scount[i] % 2 == 1) {
+			// isOdd = (isOdd) ? 0 : 1;
+			flip_isOdd();
+		}
+
 	}
 
-	db_arr(sort_tmp, len, "Received", rank, phase);
+	// db_arr(sort_tmp, len, "Received", rank, phase);
 	output = malloc(sizeof(double)*N);
 	sort(sort_tmp, &len, phase, output, MPI_COMM_WORLD);
 	// db_arr(sort_tmp, len, "afterSort", rank, phase);
@@ -180,31 +195,54 @@ void sort(double *arr, int *len, int phase, double *output, MPI_Comm communicato
 	MPI_Comm_size(communicator, &num_processors); 
 	MPI_Comm_rank(communicator, &rank);
 
-	// Only sort when there's existing doubles in the array
-	if (phase < num_values && phase % 2 == 0) {
-        if (rank%2==0){
-    		qsort(arr, *len, sizeof(double), compare);
-        } else {
-    		qsort(arr, *len, sizeof(double), compareOpp);
-        }
-        exchange_Numbers(arr, len, rank, phase, Narr);
-        arr = Narr;
-	} else if (phase < num_values && phase % 2 == 1) {
-        qsort(arr, *len, sizeof(double), compare);
-        exchange_Numbers(arr, len, rank, phase, Narr);
-        arr = Narr;
-    } else if (phase == num_values) {
+	if (phase != num_values) {
+		for (int i=0; i<num_rows_recv; i++){
+			if (phase < num_values && phase % 2 == 0){
+				qsort(&arr[i*num_values], num_values, sizeof(double), compare);
+			} else if (phase < num_values && phase % 2 == 1) {
+				qsort(&arr[i*num_values], num_values, sizeof(double), compare);
+			}
+		}
+		exchange_Numbers(arr, len, rank, phase, Narr);
+		arr = Narr;
+	} else if (phase == num_values) {
         if (phase%2==1){
             exchange_Numbers(arr, len, rank, phase, Narr);
             arr = Narr;
         } 
-        qsort(arr, *len, sizeof(double), compare);
+		for (int i=0; i<num_rows_recv; i++){
+			qsort(&arr[i*num_values], num_values, sizeof(double), compare);
+		}
         // db_arr(arr, *len, "PreFinal", rank, phase);
 		gather_Numbers(arr, *len, output, MPI_COMM_WORLD);
 
-		// printf("\n");
         return;
     }
+
+	// Only sort when there's existing doubles in the array
+	// if (phase < num_values && phase % 2 == 0) {
+    //     if (rank%2==0){
+    // 		qsort(arr, *len, sizeof(double), compare);
+    //     } else {
+    // 		qsort(arr, *len, sizeof(double), compareOpp);
+    //     }
+    //     exchange_Numbers(arr, len, rank, phase, Narr);
+    //     arr = Narr;
+	// } else if (phase < num_values && phase % 2 == 1) {
+    //     qsort(arr, *len, sizeof(double), compare);
+    //     exchange_Numbers(arr, len, rank, phase, Narr);
+    //     arr = Narr;
+    // } else if (phase == num_values) {
+    //     if (phase%2==1){
+    //         exchange_Numbers(arr, len, rank, phase, Narr);
+    //         arr = Narr;
+    //     } 
+    //     qsort(arr, *len, sizeof(double), compare);
+    //     // db_arr(arr, *len, "PreFinal", rank, phase);
+	// 	gather_Numbers(arr, *len, output, MPI_COMM_WORLD);
+
+    //     return;
+    // }
     // MAIN DEBUGGER
     phase += 1;
     // db_arr(arr, *len, "Post Phase", rank, phase);
@@ -216,26 +254,42 @@ void sort(double *arr, int *len, int phase, double *output, MPI_Comm communicato
 
 void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr){
 	// Buffers
-    double *swapTmp;
-	swapTmp = prep_buffs(*len);
+	double *tmp = prep_buffs(num_values*num_values);
+	double *rtmp = prep_buffs(*len);
 	MPI_Barrier( MPI_COMM_WORLD );
+
+	// db_arr(arr, *len, "preGather", rank, phase);
+
+	gather_Numbers(arr, *len, tmp, MPI_COMM_WORLD);
+	// db_arr(tmp, num_values*num_values, "tmp", rank, phase);
+
+	MPI_Scatterv(tmp, atav_scount, atav_sdispls,
+				column_resized, Narr, num_elems_recv,
+				MPI_DOUBLE,
+				MASTER, MPI_COMM_WORLD);
+
+	// memcpy(rtmp, arr, sizeof(double)*(*len));
+	// MPI_Scatterv(tmp, num_elems_send, displs,
+	// 			MPI_DOUBLE, &arr[0], num_elems_recv,
+	// 			MPI_DOUBLE,
+	// 			MASTER, MPI_COMM_WORLD);
+
 
     // MPI_Alltoall(arr, 1, MPI_DOUBLE,
     //              Narr, 1, MPI_DOUBLE,
     //              MPI_COMM_WORLD);
-	MPI_Alltoallv(arr, atav_scount,
-				atav_sdispls, column_resized, Narr,
-				atav_rcount, atav_rdispls, MPI_DOUBLE,
-				MPI_COMM_WORLD);
+	// MPI_Alltoallv(arr, atav_scount,
+	// 			atav_sdispls, column_resized, Narr,
+	// 			atav_rcount, atav_rdispls, MPI_DOUBLE,
+	// 			MPI_COMM_WORLD);
 
-    swapTmp = arr;
-    arr = Narr;
-    Narr = swapTmp;
-    free(Narr);
 	//DEBUG
-	db_arr(arr, *len, "After Exchange", rank, phase);
+	// db_arr(Narr, *len, "After Exchange", rank, phase);
 	return;
 };
+void flip_isOdd(){
+	isOdd = (isOdd) ? 0 : 1;
+}
 
 void gather_Numbers(double *arr_in, int len, double *output, MPI_Comm communicator){
 	int rank, num_processors;
@@ -244,36 +298,28 @@ void gather_Numbers(double *arr_in, int len, double *output, MPI_Comm communicat
 	MPI_Comm_rank(communicator, &rank);
 
 	// Prepare Buffers to Gather
-	int *finLens = malloc(sizeof(int)*num_processors);
 	int outlen = len;
-	int *displs = malloc(sizeof(int) * num_processors);
 	MPI_Gather(&outlen, 1, MPI_INT,
-               finLens, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
-	// Settle Displs and counts
+               gfinLens, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+
+	// Settle gather displs and counts
 	if (rank==MASTER){
 		for (int i = 0; i<num_processors;i++){
 			if(i>0){
-				displs[i] = displs[i-1] + finLens[i-1];
+				gdispls[i] = gdispls[i-1] + gfinLens[i-1];
 			} else {
-				displs[i] = 0;
+				gdispls[i] = 0;
 			}
 		}
 	}
 
 	MPI_Gatherv(arr_in, outlen, MPI_DOUBLE,
-					output, finLens, displs,
+					output, gfinLens, gdispls,
 					MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 	
 	return;
 }
 
-double median(double *arr, int len){
-	if (len % 2 == 0) {
-		return (arr[len/2 - 1] + arr[len/2]) / 2.0;
-	} else {
-		return arr[len/2];
-	}
-}
 
 void db_arr(double *ptr, int len, char *msg, int rank, int npPerGroup){
 	printf("%s : %i %i :: ", msg, rank, npPerGroup);

@@ -9,6 +9,7 @@
 # input15.txt    input3000.txt  input400.txt   input5.txt    output1000.txt  output2000.txt  output4.txt
 
 # mpirun -n 2 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input4.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
+# mpirun -n 3 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input4.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
 # mpirun -n 5 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input15.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
 fileidx=$1
 
