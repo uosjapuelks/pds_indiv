@@ -5,6 +5,7 @@
 
 # 0 1 2 3 5 (doubles prev with each inc)
 # (125 250 500 1000 2000)* 1000000
+# module load gcc/8.2.0 openmpi/3.1.1
 
 # sbatch -p node -n 1 a3.sh 0 1
 # sbatch -p node -n 16 a3.sh 1 1
@@ -46,4 +47,4 @@
 # sbatch -p node -n 32 a3.sh 5 2
 
 # Check A3
-sbatch -p node -n 4 a3.sh 8 1
+sbatch -p node -n 32 a4.sh 3
