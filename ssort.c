@@ -13,7 +13,7 @@
 // # mpirun -n 15 ./shearsort /proj/uppmax2023-2-13/nobackup/shear_indata/input15.txt /home/anle5400/pdp/ass/pds_indiv/trueSlurm_0.txt >> new.txt
 
 int main(int argc, char **argv) {
-	int rank, num_processors, N, remainder;
+	int remainder;
 	MPI_Status status;
 	double longest_exec_time;
 	char *input_name = argv[1];
@@ -68,6 +68,7 @@ int main(int argc, char **argv) {
 	* Variable scatter! Compute number of rows to receive
 	***/
 	double *sort_tmp;
+	tmp = prep_buffs(num_values*num_values);
 	int minRows = num_values/num_processors;
 	num_rows_recv = (num_values % num_processors > 0) ? (rank < num_values % num_processors) ? (1 + minRows) : minRows : minRows;
 	
@@ -83,7 +84,6 @@ int main(int argc, char **argv) {
 				sort_tmp, num_elems_recv, MPI_DOUBLE,
 				MASTER, MPI_COMM_WORLD);
 
-	double start = MPI_Wtime();
 	// Create pointer and run sort algorithm, returns pointer to final array of sorted to check
 	int len = num_elems_recv;   // Should be n (where N = n*n)
     int phase = 0;
@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
 	num_rows_per_processor = num_values / num_processors;
 
 	isOdd = 0;
-
+	
 	for (int i=0; i<num_processors; i++){
 		if (remainder){
 			atav_scount[i] = (num_rows_per_processor + 1);
@@ -122,15 +122,35 @@ int main(int argc, char **argv) {
 		}
 
 	}
+	int outlen = len;
+	MPI_Gather(&outlen, 1, MPI_INT,
+               gfinLens, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
 
-	// db_arr(sort_tmp, len, "Received", rank, phase);
-	output = malloc(sizeof(double)*N);
-	for (;phase<= num_values; phase++){
-		sort_tmp = sort(sort_tmp, &len, phase, output, MPI_COMM_WORLD);
+	// Settle gather displs and counts
+	if (rank==MASTER){
+		for (int i = 0; i<num_processors;i++){
+			if(i>0){
+				gdispls[i] = gdispls[i-1] + gfinLens[i-1];
+			} else {
+				gdispls[i] = 0;
+			}
+		}
 	}
-	// db_arr(sort_tmp, len, "afterSort", rank, phase);
-	
 
+
+
+
+	output = malloc(sizeof(double)*N);
+	// Narr = New array
+	// Buffers
+	double *Narr;
+    Narr = prep_buffs(len);
+	double start = MPI_Wtime();
+
+	for (;phase<= num_values; phase++){
+		sort(sort_tmp, &len, phase, output, Narr);
+	}
+	
 	// // Calculate longest execution time
 	double my_execution_time = MPI_Wtime() - start;
 	MPI_Reduce(&my_execution_time, &longest_exec_time, 1, MPI_DOUBLE, MPI_MAX, MASTER, MPI_COMM_WORLD);
@@ -144,8 +164,6 @@ int main(int argc, char **argv) {
 	if (rank == MASTER) {
 		printf("FileName: %s\n\tProcessors: %i\n\tTime: %f\n\n", input_name, num_processors, longest_exec_time);
 		// printf("%f", longest_exec_time);
-        // db_arr(output, N, "OUT", rank, phase);
-
 	}
 
 	return 0;
@@ -167,17 +185,7 @@ int compareOpp(const void* num1, const void* num2)
 				: 1;
 }  
 
-double * sort(double *arr, int *len, int phase, double *output, MPI_Comm communicator) {
-	int rank, num_processors;
-
-	// Narr = New array
-	// Buffers
-	double *Narr;
-    Narr = prep_buffs(*len);
-
-	MPI_Comm_size(communicator, &num_processors); 
-	MPI_Comm_rank(communicator, &rank);
-
+void sort(double *arr, int *len, int phase, double *output, double *Narr) {
 	if (phase != num_values) {
 		int beginwithOdd = startIndicator;
 		for (int i=0; i<num_rows_recv; i++){
@@ -194,39 +202,42 @@ double * sort(double *arr, int *len, int phase, double *output, MPI_Comm communi
 		}
 		// db_arr(arr, *len, "Post qsort", rank, phase);
 		exchange_Numbers(arr, len, rank, phase, Narr);
-		arr = Narr;
+		// arr = Narr;
+		// memcpy(Narr, arr, sizeof(double)**len);
+		memcpy(arr, Narr, sizeof(double)**len);
 	} else if (phase == num_values) {
         if (phase%2==1){
             exchange_Numbers(arr, len, rank, phase, Narr);
-            arr = Narr;
+            // arr = Narr;
+			memcpy(arr, Narr, sizeof(double)**len);
         } 
-		for (int i=0; i<num_rows_recv; i++){
-			qsort(&arr[i*num_values], num_values, sizeof(double), compare);
-		}
-        // db_arr(arr, *len, "PreFinal", rank, phase);
+		// Comment the following to output in snakelike order
+		// for (int i=0; i<num_rows_recv; i++){
+		// 	qsort(&arr[i*num_values], num_values, sizeof(double), compare);
+		// }
 		gather_Numbers(arr, *len, output, MPI_COMM_WORLD);
 
-        return output;
+        return;
     }
-    // phase += 1;
-
-    // Call recursively
-    // sort(arr, len, phase, output, communicator);
-    return arr;
+	// memcpy(sort_tmp, arr, sizeof(double)**len);
+	sort_tmp = arr;
+    return;
 }
 
 // Total Exchange or Transpose
 void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr){
 	// Buffers
-	double *tmp = prep_buffs(num_values*num_values);
-	// MPI_Barrier( MPI_COMM_WORLD );
 	gather_Numbers(arr, *len, tmp, MPI_COMM_WORLD);
 	// Gather
 
+	MPI_Scatter(tmp, num_rows_per_processor, column_resized, 
+			Narr, num_elems_recv, MPI_DOUBLE,
+			MASTER, MPI_COMM_WORLD);
+
 	// Scatter new row to be sorted
-	MPI_Scatterv(tmp, atav_scount, atav_sdispls, column_resized, 
-				Narr, num_elems_recv, MPI_DOUBLE,
-				MASTER, MPI_COMM_WORLD);
+	// MPI_Scatterv(tmp, atav_scount, atav_sdispls, column_resized, 
+	// 			Narr, num_elems_recv, MPI_DOUBLE,
+	// 			MASTER, MPI_COMM_WORLD);
 	return;
 };
 
@@ -235,30 +246,14 @@ void flip_isOdd(){
 }
 
 void gather_Numbers(double *arr_in, int len, double *output, MPI_Comm communicator){
-	int rank, num_processors;
-	
-	MPI_Comm_size(communicator, &num_processors); 
-	MPI_Comm_rank(communicator, &rank);
 
 	// Prepare Buffers to Gather
-	int outlen = len;
-	MPI_Gather(&outlen, 1, MPI_INT,
-               gfinLens, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+	MPI_Gather(arr_in, len, MPI_DOUBLE,
+               output, len, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 
-	// Settle gather displs and counts
-	if (rank==MASTER){
-		for (int i = 0; i<num_processors;i++){
-			if(i>0){
-				gdispls[i] = gdispls[i-1] + gfinLens[i-1];
-			} else {
-				gdispls[i] = 0;
-			}
-		}
-	}
-
-	MPI_Gatherv(arr_in, outlen, MPI_DOUBLE,
-					output, gfinLens, gdispls,
-					MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+	// MPI_Gatherv(arr_in, len, MPI_DOUBLE,
+	// 				output, gfinLens, gdispls,
+	// 				MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 	
 	return;
 }
