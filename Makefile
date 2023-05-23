@@ -13,9 +13,9 @@ all: code
 code: ssort.c
 	$(CC) $(CFLAGS) $(RELEASEFLAGS) -o shear ssort.c $(LIBS)
 
-# debug: qsort.c
-# 	$(CC) $(CFLAGS) $(DEBUGFLAGS) -D DEBUG -o quicksortD qsort.c $(LIBS)
+debug: ssort.c
+	$(CC) $(CFLAGS) $(DEBUGFLAGS) -D DEBUG -o dbshear ssort.c $(LIBS)
 
 clean:
-	$(RM) shear
+	$(RM) shear dbshear
 

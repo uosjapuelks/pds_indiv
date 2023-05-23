@@ -29,6 +29,9 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	/***
+	* Initialization Start
+	***/
 	MPI_Init(&argc, &argv);               
 	MPI_Comm_size(MPI_COMM_WORLD, &num_processors); 
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -85,49 +88,49 @@ int main(int argc, char **argv) {
 				sort_tmp, num_elems_recv, MPI_DOUBLE,
 				MASTER, MPI_COMM_WORLD);
 
-	// Create pointer and run sort algorithm, returns pointer to final array of sorted to check
-	int len = num_elems_recv;   // Should be n (where N = n*n)
-    int phase = 0;
-
-	// Create the datatype and Prepare buffers for alltoallV for later use
+	// Create the datatype and Prepare buffers for column sending for later use
 	MPI_Type_vector(num_values, 1, num_values, MPI_DOUBLE, &column_type);
 	MPI_Type_commit(&column_type);
     MPI_Type_create_resized(column_type, 0, sizeof(double), &column_resized);
     MPI_Type_commit(&column_resized);
 
-	atav_scount = malloc(sizeof(int) * num_processors);
-	atav_sdispls = malloc(sizeof(int) * num_processors);
+	// allows for each rank to calculate whether to sort in descending or ascending order
+	// also allows for scatterv of columns
+	sv_Scount = malloc(sizeof(int) * num_processors);
+	sv_sDispls = malloc(sizeof(int) * num_processors);
 
+	// Variables needed to calculate rows to receive or asc desc sorting
 	remainder = num_values % num_processors;
 	num_rows_per_processor = num_values / num_processors;
-
 	isOdd = 0;
 	
+	// Initialise buffers to allow smooth calculations
 	for (int i=0; i<num_processors; i++){
 		if (remainder){
-			atav_scount[i] = (num_rows_per_processor + 1);
+			sv_Scount[i] = (num_rows_per_processor + 1);
 			remainder -= 1;
 		} else {
-			atav_scount[i] = num_rows_per_processor;
+			sv_Scount[i] = num_rows_per_processor;
 		}
 		if(i>0){
-			atav_sdispls[i] = atav_sdispls[i-1] + atav_scount[i-1];
+			sv_sDispls[i] = sv_sDispls[i-1] + sv_Scount[i-1];
 		} else {
-			atav_sdispls[i] = 0;
+			sv_sDispls[i] = 0;
 		}
 		if (rank == i){
 			startIndicator = isOdd;
 		}
-		if (atav_scount[i] % 2 == 1) {
+		if (sv_Scount[i] % 2 == 1) {
 			flip_isOdd();
 		}
 
 	}
+
+	// Settle gather displs and counts allows for gatherV
+	int len = num_elems_recv;
 	int outlen = len;
 	MPI_Gather(&outlen, 1, MPI_INT,
                gfinLens, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
-
-	// Settle gather displs and counts
 	if (rank==MASTER){
 		for (int i = 0; i<num_processors;i++){
 			if(i>0){
@@ -138,17 +141,15 @@ int main(int argc, char **argv) {
 		}
 	}
 
-
-
-
+	// Buffers initailisation
 	output = malloc(sizeof(double)*N);
-	// Narr = New array
-	// Buffers
-	double *Narr;
     Narr = prep_buffs(len);
 	double start = MPI_Wtime();
 
+	// Calculate steps needed * 2 as each step takes 2 phases
 	stepsNeeded = ceil(log2(num_values))*2;
+    int phase = 0;
+
 	for (;phase<= stepsNeeded; phase++){
 		sort(sort_tmp, &len, phase, output, Narr);
 	}
@@ -160,17 +161,18 @@ int main(int argc, char **argv) {
 	if (rank==MASTER){
 		write_output(output_name, output, N);
 	}
-	MPI_Finalize(); 
 
 	// // Announce timing
 	if (rank == MASTER) {
-		printf("FileName: %s\n\tProcessors: %i\n\tTime: %f\n\n", input_name, num_processors, longest_exec_time);
-		// printf("%f", longest_exec_time);
+		// printf("FileName: %s\n\tProcessors: %i\n\tTime: %f\n\n", input_name, num_processors, longest_exec_time);
+		printf("%f", longest_exec_time);
 	}
+	MPI_Finalize(); 
 
 	return 0;
 }
 
+// compare normal (ascending)
 int compare(const void* num1, const void* num2)
 {  
     double a = *(double*) num1;  
@@ -179,6 +181,7 @@ int compare(const void* num1, const void* num2)
 				: -1;
 }  
 
+// compare opposite (descending)
 int compareOpp(const void* num1, const void* num2)
 {  
     double a = *(double*) num1;  
@@ -187,57 +190,61 @@ int compareOpp(const void* num1, const void* num2)
 				: 1;
 }  
 
+// Main sort algortihm
 void sort(double *arr, int *len, int phase, double *output, double *Narr) {
 	if (phase != stepsNeeded) {
-		int beginwithOdd = startIndicator;
+		int beginwithOdd = startIndicator;	// if first row in processor is odd: 1 else 0
 		for (int i=0; i<num_rows_recv; i++){
 			if (phase < stepsNeeded && phase % 2 == 0){
 				if (beginwithOdd == 0) {
+					// Even row ascending sort
 					qsort(&arr[i*num_values], num_values, sizeof(double), compare);
 				} else {
+					// Odd row descending sort
 					qsort(&arr[i*num_values], num_values, sizeof(double), compareOpp);
 				}
 				beginwithOdd = beginwithOdd ? 0 : 1;
 			} else if (phase < stepsNeeded && phase % 2 == 1) {
+				// All columns ascending sort
 				qsort(&arr[i*num_values], num_values, sizeof(double), compare);
 			}
 		}
-		// db_arr(arr, *len, "Post qsort", rank, phase);
+
+		// Total Exchange
 		exchange_Numbers(arr, len, rank, phase, Narr);
-		// arr = Narr;
-		// memcpy(Narr, arr, sizeof(double)**len);
 		memcpy(arr, Narr, sizeof(double)**len);
 	} else if (phase == stepsNeeded) {
         if (phase%2==1){
+
+			// Failsafe Total Exchange for a case where steps needed is somehow not even
             exchange_Numbers(arr, len, rank, phase, Narr);
-            // arr = Narr;
 			memcpy(arr, Narr, sizeof(double)**len);
         } 
-		// Comment the following to output in snakelike order
+
+		/********************************************************
+		* Comment the following to output in snakelike order	*
+		* Uncomment for normal sort output						*
+		*********************************************************/
 		// for (int i=0; i<num_rows_recv; i++){
 		// 	qsort(&arr[i*num_values], num_values, sizeof(double), compare);
 		// }
+
+		/** Gather answers to output **/
 		gather_Numbers(arr, *len, output, MPI_COMM_WORLD);
 
         return;
     }
-	// memcpy(sort_tmp, arr, sizeof(double)**len);
 	sort_tmp = arr;
     return;
 }
 
 // Total Exchange or Transpose
 void exchange_Numbers(double *arr, int *len, int rank, int phase, double *Narr){
-	// Buffers
-	gather_Numbers(arr, *len, tmp, MPI_COMM_WORLD);
 	// Gather
-
-	// MPI_Scatter(tmp, num_rows_per_processor, column_resized, 
-	// 		Narr, num_elems_recv, MPI_DOUBLE,
-	// 		MASTER, MPI_COMM_WORLD);
+	gather_Numbers(arr, *len, tmp, MPI_COMM_WORLD);
 
 	// Scatter new row to be sorted
-	MPI_Scatterv(tmp, atav_scount, atav_sdispls, column_resized, 
+	MPI_Scatterv(tmp, sv_Scount, sv_sDispls, column_resized, 
 				Narr, num_elems_recv, MPI_DOUBLE,
 				MASTER, MPI_COMM_WORLD);
 	return;
@@ -247,11 +254,8 @@ void flip_isOdd(){
 	isOdd = (isOdd) ? 0 : 1;
 }
 
+// Helper function to use gatherv easily
 void gather_Numbers(double *arr_in, int len, double *output, MPI_Comm communicator){
-
-	// Prepare Buffers to Gather
-	// MPI_Gather(arr_in, len, MPI_DOUBLE,
-    //            output, len, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 
 	MPI_Gatherv(arr_in, len, MPI_DOUBLE,
 					output, gfinLens, gdispls,
@@ -260,7 +264,7 @@ void gather_Numbers(double *arr_in, int len, double *output, MPI_Comm communicat
 	return;
 }
 
-
+// Debug prints array
 void db_arr(double *ptr, int len, char *msg, int rank, int npPerGroup){
 	printf("%s : %i %i :: ", msg, rank, npPerGroup);
 	for (int i=0; i<len; i++){
@@ -270,6 +274,7 @@ void db_arr(double *ptr, int len, char *msg, int rank, int npPerGroup){
 	return;
 }
 
+// Prepare buffers (allocation of memory)
 double *prep_buffs(int newSize){
 	double *prep_buff;
 	if (NULL == (prep_buff = malloc(newSize * sizeof(double)))) {
@@ -315,7 +320,7 @@ int write_output(char *file_name, const double *output, int num_values) {
 	}
 	for (int i = 0; i < num_values; i++) {
 		if (i == num_values - 1) {
-			// Print Integers to check for correctness!
+			// Print Integers to check for correctness! Change %.0f to %.6f for doubles
 			if (0 > fprintf(file, "%.0f", output[i])) {
 				perror("Couldn't write to output file");
 			}
@@ -325,11 +330,11 @@ int write_output(char *file_name, const double *output, int num_values) {
 			}
 		}
 	}
-	if (num_values <=0 ) {
+	// if (num_values <=0 ) {
 		if (0 > fprintf(file, "\n")) {
 			perror("Couldn't write to output file");
 		}
-	}
+	// }
 	if (0 != fclose(file)) {
 		perror("Warning: couldn't close output file");
 	}

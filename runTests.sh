@@ -1,51 +1,25 @@
 #!/bin/bash -l
 #SBATCH -M snowy
 #SBATCH -A uppmax2023-2-13
-#SBATCH -t 40:00
+#SBATCH -t 5:00
 
-# 0 1 2 3 5 (doubles prev with each inc)
-# (125 250 500 1000 2000)* 1000000
+# 0 1 2 3 4 5 6 7 8
+# 400 500 800 1000 1500 1600 2000 3000 3200
 # module load gcc/8.2.0 openmpi/3.1.1
-
-# sbatch -p node -n 1 a3.sh 0 1
-# sbatch -p node -n 16 a3.sh 1 1
-# sbatch -p node -n 1 a3.sh 2 1
-# sbatch -p node -n 1 a3.sh 3 1
-# sbatch -p node -n 1 a3.sh 4 1
-# sbatch -p node -n 1 a3.sh 5 1
-# sbatch -p node -n 1 a3.sh 6 1
-
-# sbatch -p node -n 16 a3.sh 0 2
-# sbatch -p node -n 16 a3.sh 1 2
-# sbatch -p node -n 4 a3.sh 2 2
-# sbatch -p node -n 4 a3.sh 3 2
-# sbatch -p node -n 4 a3.sh 4 2
-# sbatch -p node -n 4 a3.sh 5 2
-# sbatch -p node -n 4 a3.sh 6 2
-
-# sbatch -p node -n 16 a3.sh 0 3
-# sbatch -p node -n 16 a3.sh 1 3
-# sbatch -p node -n 4 a3.sh 2 3
-# sbatch -p node -n 4 a3.sh 3 3
-# sbatch -p node -n 4 a3.sh 4 3
-# sbatch -p node -n 4 a3.sh 5 3
-# sbatch -p node -n 4 a3.sh 6 3
-
-# Strong Scaling
-# sbatch -p node -n 1 a3.sh 1 1
-# sbatch -p node -n 2 a3.sh 1 1
-# sbatch -p node -n 4 a3.sh 1 1
-# sbatch -p node -n 8 a3.sh 1 1
-# sbatch -p node -n 16 a3.sh 1 1
-# sbatch -p node -n 32 a3.sh 1 1
-
-# Weak Scaling
-# sbatch -p node -n 2 a3.sh 0 3
-# sbatch -p node -n 4 a3.sh 1 3
-# sbatch -p node -n 8 a3.sh 2 3
-# sbatch -p node -n 16 a3.sh 3 3
-# sbatch -p node -n 32 a3.sh 5 2
+# sbatch -p node -n 10 a4.sh 7
 
 # Check A3
-sbatch -p node -n 10 a4.sh 7
-sbatch -p node -n 1 a4.sh 7
+# Strong scale
+# sbatch -p node -n 1 a4.sh 8
+# sbatch -p node -n 2 a4.sh 8
+# sbatch -p node -n 4 a4.sh 8
+# sbatch -p node -n 8 a4.sh 8
+# sbatch -p node -n 16 a4.sh 8
+# sbatch -p node -n 32 a4.sh 8
+
+# Weak scale
+# sbatch -p node -n 2 a4.sh 0
+# sbatch -p node -n 3 a4.sh 1
+# sbatch -p node -n 8 a4.sh 2
+# sbatch -p node -n 12 a4.sh 3
+# sbatch -p node -n 32 a4.sh 5
